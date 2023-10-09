@@ -1,0 +1,42 @@
+import pandas as pd
+import json
+from yahoo_fin import stock_info as si
+from azure.eventhub.aio import EventHubProducerClient
+from azure.eventhub import EventData
+from azure.eventhub.exceptions import EventHubError
+import asyncio
+
+def get_data_for_stock(stock):
+    stock_pull = si.get_quote_table(stock)
+    stock_df = pd.DataFrame([stock_pull],columns=stock_pull.keys())[['Quote Price','Market Cap','Volume']]
+    return stock_df.to_dict('record')
+
+EVENT_HUB_CONNECTION_STR = "Your Event Hub Connection String"
+EVENT_HUB_NAME = "Your Event Hub name"
+
+async def run():
+    while True:
+        await asyncio.sleep(5)
+        producer = EventHubProducerClient.from_connection_string(
+            conn_str=EVENT_HUB_CONNECTION_STR, eventhub_name=EVENT_HUB_NAME
+        )
+        async with producer:
+            # Create a batch.
+            event_data_batch = await producer.create_batch()
+
+            # Add events to the batch.
+            event_data_batch.add(EventData(json.dumps(get_data_for_stock('msft'))))
+
+
+            # Send the batch of events to the event hub.
+            await producer.send_batch(event_data_batch)
+            
+loop = asyncio.get_event_loop()
+try:
+    asyncio.ensure_future(run())
+    loop.run_forever()
+except KeyboardInterrupt:
+    pass
+finally:
+    print('Closing Loop Now')
+    loop.close()
